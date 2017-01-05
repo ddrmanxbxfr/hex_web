@@ -39,7 +39,7 @@ defmodule HexWeb.PackageTest do
     assert changeset.errors == []
     assert [links: {"invalid link \"aaa\"", _},
             links: {"invalid link \"bbb\"", _}] =
-           changeset.changes.meta.errors
+      changeset.changes.meta.errors
   end
 
   test "packages are unique", %{user: user} do
@@ -49,39 +49,6 @@ defmodule HexWeb.PackageTest do
 
   test "reserved names", %{user: user} do
     assert {:error, %{errors: [name: {"is reserved", _}]}} = Package.build(user, pkg_meta(%{name: "elixir", description: "Awesomeness."})) |> HexWeb.Repo.insert
-  end
-
-  test "search extra metadata" do
-    meta = %{
-      "maintainers"  => ["justin"],
-      "licenses"     => ["apache", "BSD"],
-      "links"        => %{"github" => "https://github.com", "docs" => "https://hexdocs.pm"},
-      "description"  => "description",
-      "extra"        => %{"foo" => %{"bar" => "baz"}, "list" => ["a", 1]}}
-
-    meta2 = Map.put(meta, "extra", %{"foo" => %{"bar" => "baz"}, "list" => ["b", 2]})
-
-    user = HexWeb.Repo.get_by!(User, username: "eric")
-
-    Package.build(user, pkg_meta(%{name: "nerves", description: "DSL"}))
-    |> HexWeb.Repo.insert!
-    |> Package.update(%{"meta" => meta})
-    |> HexWeb.Repo.update!
-
-    Package.build(user, pkg_meta(%{name: "nerves_pkg", description: "DSL"}))
-    |> HexWeb.Repo.insert!
-    |> Package.update(%{"meta" => meta2})
-    |> HexWeb.Repo.update!
-
-    search = [
-      {"name:nerves extra:list,[a]", 1},
-      {"name:nerves* extra:foo,bar,baz", 2},
-      {"name:nerves* extra:list,[1]", 1}]
-    for {s, len} <- search do
-      p = Package.all(1, 10, s, nil)
-      |> HexWeb.Repo.all
-      assert length(p) == len
-    end
   end
 
   test "sort packages by downloads", %{user: user} do
@@ -104,5 +71,89 @@ defmodule HexWeb.PackageTest do
       |> Enum.map(& &1.name)
 
     assert packages == ["phoenix", "ecto"]
+  end
+
+  describe "search" do
+    test "extra metadata" do
+      create_mock_package("nerves", "DSL", 1)
+      create_mock_package("nerves_pkg", "DSL", 2)
+
+      search = [
+        {"name:nerves extra:list,[a]", 1},
+        {"name:nerves* extra:foo,bar,baz", 2},
+        {"name:nerves* extra:list,[1]", 1}]
+      for {s, len} <- search do
+        p = Package.all(1, 10, s, nil)
+        |> HexWeb.Repo.all
+        assert length(p) == len
+      end
+    end
+
+    test "without metadata should be able to find keyword in description" do
+      create_mock_package("ubertuffer", "A dummy js wrapper for xyz", 3)
+      p = Package.all(1, 10, "xyz", nil) |> HexWeb.Repo.all
+      assert length(p) == 1
+    end
+
+    test "without metdata should be able to find keyword in name" do
+      create_mock_package("ubertuffer", "A dummy js wrapper for xyz", 3)
+      p = Package.all(1, 10, "ubertuffer", nil) |> HexWeb.Repo.all
+      assert length(p) == 1
+    end
+
+    test "partial query in name without metadata should be supported" do
+      create_mock_package("jsx", "DSL", 1)
+      create_mock_package("json", "DSL", 2)
+      create_mock_package("ubertuffer", "A dummy js wrapper for xyz", 3)
+      create_mock_package("uberspeedoflight", "A fast module", 4)
+
+      search = [
+        {"jso", 1},
+        {"tuffer", 1},
+        {"son", 1},
+        {"ube", 2},
+        {"ub", 2},
+        {"js", 3}
+      ]
+
+      for {s, len} <- search do
+        p = Package.all(1, 10, s, nil)
+        |> HexWeb.Repo.all
+        assert length(p) == len, "Failed found #{length(p)} instead of #{len} packages for query #{s}"
+      end
+    end
+  end
+
+  test "partial query in description without metdata should be supported" do
+    create_mock_package("ubermock", "A modulo module for speedometer", 1)
+    create_mock_package("ubertuffer", "Speeding is not a mock", 3)
+
+    search = [
+      {"spee", 2},
+      {"mo", 2}
+    ]
+
+    for {s, len} <- search do
+      p = Package.all(1, 10, s, nil)
+      |> HexWeb.Repo.all
+      assert length(p) == len, "Failed found #{length(p)} instead of #{len} packages for query #{s}"
+    end
+  end
+
+  defp create_mock_package(package_name, package_description, item_index) do
+    meta = %{
+      "maintainers"  => ["justin"],
+      "licenses"     => ["apache", "BSD"],
+      "links"        => %{"github" => "https://github.com", "docs" => "https://hexdocs.pm"},
+      "description"  => "description",
+      "extra"        => %{"foo" => %{"bar" => "baz"}, "list" => ["a", item_index]}
+    }
+
+    user = HexWeb.Repo.get_by!(User, username: "eric")
+
+    Package.build(user, pkg_meta(%{name: package_name, description: package_description}))
+    |> HexWeb.Repo.insert!
+    |> Package.update(%{"meta" => meta})
+    |> HexWeb.Repo.update!
   end
 end
