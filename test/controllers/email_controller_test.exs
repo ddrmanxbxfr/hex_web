@@ -27,4 +27,12 @@ defmodule HexWeb.EmailControllerTest do
     assert redirected_to(conn) == "/"
     assert get_flash(conn, :info) =~ "has been verified"
   end
+
+  test "verify email with already validated email", c do
+    email = hd(c.user.emails)
+    get(build_conn(), "email/verify", %{username: c.user.username, email: email.email, key: email.verification_key})
+    conn = get(build_conn(), "email/verify", %{username: c.user.username, email: email.email, key: email.verification_key})
+    assert redirected_to(conn) == "/"
+    assert get_flash(conn, :info) =~ "failed to verify"
+  end
 end
